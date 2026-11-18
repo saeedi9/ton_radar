@@ -38,10 +38,10 @@ button{background:#263c56;color:white}
 
 <div class="stats">
 <div class="stat">شبکه<b>TON</b></div>
-<div class="stat">تعداد استخرها<b id="count">۰</b></div>
+<div class="stat">استخرهای جدید<b id="count">۰</b></div>
 </div>
 
-<h2>🔎 استخرهای نقدینگی</h2>
+<h2>🆕 ۲۰ استخر جدیدتر</h2>
 <div id="status">در حال دریافت اطلاعات...</div>
 <div id="pools"></div>
 
@@ -56,64 +56,98 @@ function money(v){
  return Number.isFinite(n)?n.toLocaleString("en-US",{maximumFractionDigits:2}):"نامشخص";
 }
 
+function safe(v){
+ return String(v??"").replace(/[&<>"']/g,c=>({
+ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+ }[c]));
+}
+
 async function load(){
  const box=document.getElementById("pools");
  const status=document.getElementById("status");
+
  try{
   const [pr,ar]=await Promise.all([
    fetch(API+"/pools"),
    fetch(API+"/assets")
   ]);
+
   if(!pr.ok||!ar.ok)throw Error("API error");
-  const pd=await pr.json(),ad=await ar.json();
+
+  const pd=await pr.json();
+  const ad=await ar.json();
+
   const pools=pd.pool_list||[];
   const assets=ad.asset_list||[];
+
   const map={};
+
   assets.forEach(a=>{
    map[(a.contract_address||a.address||"").toLowerCase()]=a;
   });
 
-  document.getElementById("count").textContent=pools.length;
-  status.textContent=pools.length?"اطلاعات به‌روز شد":"استخری پیدا نشد";
+  const latestPools=pools
+   .filter(p=>Number(p.createdAtBlockTimestamp)>0)
+   .sort((a,b)=>
+    Number(b.createdAtBlockTimestamp)-Number(a.createdAtBlockTimestamp)
+   )
+   .slice(0,20);
+
+  document.getElementById("count").textContent=latestPools.length;
+  status.textContent=latestPools.length
+   ?"۲۰ استخر جدیدتر بررسی شدند"
+   :"اطلاعات زمان ایجاد استخرها در دسترس نیست";
 
   box.innerHTML="";
-  pools.slice(0,30).forEach((p,i)=>{
+
+  latestPools.forEach((p,i)=>{
    const a0=map[(p.token0_address||"").toLowerCase()];
    const a1=map[(p.token1_address||"").toLowerCase()];
+
    const name0=a0?.symbol||a0?.display_name||"توکن ناشناس";
    const name1=a1?.symbol||a1?.display_name||"توکن ناشناس";
+
    const address=p.address||"";
    const value=p.lp_total_supply_usd;
 
+   const timestamp=Number(p.createdAtBlockTimestamp);
+   const created=new Date(timestamp*1000).toLocaleString("fa-IR");
+
    const card=document.createElement("div");
    card.className="pool";
+
    card.innerHTML=`
-    <h3>${name0} / ${name1}</h3>
+    <h3>${safe(name0)} / ${safe(name1)}</h3>
     <div class="info">
+    🕒 زمان ایجاد: ${safe(created)}<br>
     💧 نقدینگی: $${money(value)}<br>
-    📍 آدرس استخر: ${address||"نامشخص"}<br>
+    📍 آدرس استخر: ${safe(address||"نامشخص")}<br>
     </div>
     <div class="actions">
     <a target="_blank" rel="noopener" href="https://dexscreener.com/ton/${encodeURIComponent(address)}">نمودار و قیمت</a>
     <button type="button">آدرس توکن‌ها</button>
     </div>`;
+
    card.querySelector("button").onclick=()=>{
     alert("Token 0: "+(p.token0_address||"نامشخص")+
     "\nToken 1: "+(p.token1_address||"نامشخص"));
    };
+
    box.appendChild(card);
 
    if((i+1)%5===0){
-    const ad=document.createElement("div");
-    ad.className="ad";
-    ad.innerHTML="<b>📢 جایگاه تبلیغاتی</b><p>فضای معرفی پروژه‌های TON</p>";
-    box.appendChild(ad);
+    const adBox=document.createElement("div");
+    adBox.className="ad";
+    adBox.innerHTML="<b>📢 جایگاه تبلیغاتی</b><p>فضای معرفی پروژه‌های TON</p>";
+    box.appendChild(adBox);
    }
   });
+
  }catch(e){
   status.textContent="دریافت اطلاعات ناموفق بود. دوباره تلاش کن.";
  }
 }
+
 load();
 setInterval(load,60000);
 </script>
