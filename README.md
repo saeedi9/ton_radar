@@ -31,6 +31,7 @@ button{background:#263c56;color:white}
 </style>
 </head>
 <body>
+
 <header>
 <h1>TON RADAR 🚀</h1>
 <div class="sub">رادار استخرهای جدید شبکه TON</div>
@@ -41,7 +42,7 @@ button{background:#263c56;color:white}
 <div class="stat">تعداد استخرها<b id="count">۰</b></div>
 </div>
 
-<h2>🆕 ۲۰ استخر اخیر</h2>
+<h2>🆕 ۲۰ استخر جدیدتر</h2>
 <div id="status">در حال دریافت اطلاعات...</div>
 <div id="pools"></div>
 
@@ -53,92 +54,81 @@ const API="https://api.ston.fi/v1";
 
 function money(v){
  const n=Number(v);
- return Number.isFinite(n)?n.toLocaleString("en-US",{maximumFractionDigits:2}):"نامشخص";
+ return Number.isFinite(n)
+ ?n.toLocaleString("en-US",{maximumFractionDigits:2})
+ :"نامشخص";
 }
 
 function safe(v){
  return String(v??"").replace(/[&<>"']/g,c=>({
- "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+ "&":"&amp;","<":"&lt;",">":"&gt;",
+ '"':"&quot;","'":"&#39;"
  }[c]));
-}
-
-function getTime(p){
- const fields=[
-  p.createdAtBlockTimestamp,
-  p.created_at_block_timestamp,
-  p.create_timestamp,
-  p.createdAt,
-  p.created_at
- ];
-
- for(const value of fields){
-  if(value===null||value===undefined||value==="")continue;
-  const n=Number(value);
-  if(Number.isFinite(n)&&n>0){
-   return n>100000000000?n/1000:n;
-  }
-  const d=Date.parse(value);
-  if(Number.isFinite(d))return d/1000;
- }
- return 0;
 }
 
 async function load(){
  const box=document.getElementById("pools");
  const status=document.getElementById("status");
 
+ status.textContent="در حال دریافت استخرهای جدید...";
+
  try{
-  const [pr,ar]=await Promise.all([
-   fetch(API+"/pools"),
+  const [poolResponse,assetResponse]=await Promise.all([
+
+   fetch(API+"/pools/query",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+     condition:null,
+     sort_by:["createdAtBlockTimestamp:desc"],
+     limit:20
+    })
+   }),
+
    fetch(API+"/assets")
   ]);
 
-  if(!pr.ok||!ar.ok)throw Error("API error");
-
-  const pd=await pr.json();
-  const ad=await ar.json();
-
-  const pools=pd.pool_list||[];
-  const assets=ad.asset_list||[];
-
-  const map={};
-  assets.forEach(a=>{
-   const address=(a.contract_address||a.address||"").toLowerCase();
-   if(address)map[address]=a;
-  });
-
-  const hasTimes=pools.some(p=>getTime(p)>0);
-
-  let sortedPools=[...pools];
-
-  if(hasTimes){
-   sortedPools.sort((a,b)=>getTime(b)-getTime(a));
+  if(!poolResponse.ok){
+   throw Error("Pool API: "+poolResponse.status);
   }
 
-  const latestPools=sortedPools.slice(0,20);
+  if(!assetResponse.ok){
+   throw Error("Asset API: "+assetResponse.status);
+  }
 
-  document.getElementById("count").textContent=latestPools.length;
+  const poolData=await poolResponse.json();
+  const assetData=await assetResponse.json();
+
+  const pools=poolData.pool_list||[];
+  const assets=assetData.asset_list||[];
+
+  const assetMap={};
+
+  assets.forEach(a=>{
+   const key=(a.contract_address||a.address||"").toLowerCase();
+   if(key)assetMap[key]=a;
+  });
+
+  document.getElementById("count").textContent=pools.length;
   box.innerHTML="";
 
-  if(!latestPools.length){
-   status.textContent="هیچ استخری از API دریافت نشد.";
+  if(!pools.length){
+   status.textContent="استخر جدیدی دریافت نشد.";
    return;
   }
 
-  status.textContent=hasTimes
-   ?"۲۰ استخر مرتب‌شده بر اساس زمان ایجاد"
-   :"زمان ایجاد در اطلاعات API موجود نیست؛ نمایش به ترتیب دریافتی";
+  status.textContent="استخرها از API دریافت شدند.";
 
-  latestPools.forEach((p,i)=>{
-   const a0=map[(p.token0_address||"").toLowerCase()];
-   const a1=map[(p.token1_address||"").toLowerCase()];
+  pools.forEach((p,i)=>{
+
+   const a0=assetMap[(p.token0_address||"").toLowerCase()];
+   const a1=assetMap[(p.token1_address||"").toLowerCase()];
 
    const name0=a0?.symbol||a0?.display_name||"توکن ناشناس";
    const name1=a1?.symbol||a1?.display_name||"توکن ناشناس";
 
    const address=p.address||"";
-   const value=p.lp_total_supply_usd;
-   const timestamp=getTime(p);
+   const timestamp=Number(p.createdAtBlockTimestamp);
    const created=timestamp
     ?new Date(timestamp*1000).toLocaleString("fa-IR")
     :"نامشخص";
@@ -150,11 +140,13 @@ async function load(){
     <h3>${safe(name0)} / ${safe(name1)}</h3>
     <div class="info">
     🕒 زمان ایجاد: ${safe(created)}<br>
-    💧 نقدینگی: $${money(value)}<br>
+    💧 نقدینگی: $${money(p.lp_total_supply_usd)}<br>
     📍 آدرس استخر: ${safe(address||"نامشخص")}<br>
     </div>
     <div class="actions">
-    <a target="_blank" rel="noopener" href="https://dexscreener.com/ton/${encodeURIComponent(address)}">نمودار و قیمت</a>
+    <a target="_blank" rel="noopener"
+    href="https://dexscreener.com/ton/${encodeURIComponent(address)}">
+    نمودار و قیمت</a>
     <button type="button">آدرس توکن‌ها</button>
     </div>`;
 
@@ -166,15 +158,17 @@ async function load(){
    box.appendChild(card);
 
    if((i+1)%5===0){
-    const adBox=document.createElement("div");
-    adBox.className="ad";
-    adBox.innerHTML="<b>📢 جایگاه تبلیغاتی</b><p>فضای معرفی پروژه‌های TON</p>";
-    box.appendChild(adBox);
+    const ad=document.createElement("div");
+    ad.className="ad";
+    ad.innerHTML=
+    "<b>📢 جایگاه تبلیغاتی</b><p>فضای معرفی پروژه‌های TON</p>";
+    box.appendChild(ad);
    }
   });
 
  }catch(e){
-  status.textContent="دریافت اطلاعات ناموفق بود. دوباره تلاش کن.";
+  console.error(e);
+  status.textContent="خطا در دریافت اطلاعات: "+e.message;
  }
 }
 
