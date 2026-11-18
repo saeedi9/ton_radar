@@ -19,7 +19,7 @@ h1{color:#55c7ff;margin:5px}
 h2{font-size:17px}
 .pool{margin:12px 0}
 .pool h3{margin:0 0 10px;color:#65ceff}
-.info{font-size:13px;color:#b5c5d8;line-height:2}
+.info{font-size:13px;color:#b5c5d8;line-height:2;overflow-wrap:anywhere}
 .actions{display:flex;gap:8px;margin-top:10px}
 a,button{border:0;border-radius:9px;padding:10px;text-decoration:none;font-size:13px}
 a{background:#167bb9;color:white}
@@ -38,10 +38,10 @@ button{background:#263c56;color:white}
 
 <div class="stats">
 <div class="stat">شبکه<b>TON</b></div>
-<div class="stat">استخرهای جدید<b id="count">۰</b></div>
+<div class="stat">تعداد استخرها<b id="count">۰</b></div>
 </div>
 
-<h2>🆕 ۲۰ استخر جدیدتر</h2>
+<h2>🆕 ۲۰ استخر اخیر</h2>
 <div id="status">در حال دریافت اطلاعات...</div>
 <div id="pools"></div>
 
@@ -60,6 +60,27 @@ function safe(v){
  return String(v??"").replace(/[&<>"']/g,c=>({
  "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
  }[c]));
+}
+
+function getTime(p){
+ const fields=[
+  p.createdAtBlockTimestamp,
+  p.created_at_block_timestamp,
+  p.create_timestamp,
+  p.createdAt,
+  p.created_at
+ ];
+
+ for(const value of fields){
+  if(value===null||value===undefined||value==="")continue;
+  const n=Number(value);
+  if(Number.isFinite(n)&&n>0){
+   return n>100000000000?n/1000:n;
+  }
+  const d=Date.parse(value);
+  if(Number.isFinite(d))return d/1000;
+ }
+ return 0;
 }
 
 async function load(){
@@ -81,24 +102,32 @@ async function load(){
   const assets=ad.asset_list||[];
 
   const map={};
-
   assets.forEach(a=>{
-   map[(a.contract_address||a.address||"").toLowerCase()]=a;
+   const address=(a.contract_address||a.address||"").toLowerCase();
+   if(address)map[address]=a;
   });
 
-  const latestPools=pools
-   .filter(p=>Number(p.createdAtBlockTimestamp)>0)
-   .sort((a,b)=>
-    Number(b.createdAtBlockTimestamp)-Number(a.createdAtBlockTimestamp)
-   )
-   .slice(0,20);
+  const hasTimes=pools.some(p=>getTime(p)>0);
+
+  let sortedPools=[...pools];
+
+  if(hasTimes){
+   sortedPools.sort((a,b)=>getTime(b)-getTime(a));
+  }
+
+  const latestPools=sortedPools.slice(0,20);
 
   document.getElementById("count").textContent=latestPools.length;
-  status.textContent=latestPools.length
-   ?"۲۰ استخر جدیدتر بررسی شدند"
-   :"اطلاعات زمان ایجاد استخرها در دسترس نیست";
-
   box.innerHTML="";
+
+  if(!latestPools.length){
+   status.textContent="هیچ استخری از API دریافت نشد.";
+   return;
+  }
+
+  status.textContent=hasTimes
+   ?"۲۰ استخر مرتب‌شده بر اساس زمان ایجاد"
+   :"زمان ایجاد در اطلاعات API موجود نیست؛ نمایش به ترتیب دریافتی";
 
   latestPools.forEach((p,i)=>{
    const a0=map[(p.token0_address||"").toLowerCase()];
@@ -109,9 +138,10 @@ async function load(){
 
    const address=p.address||"";
    const value=p.lp_total_supply_usd;
-
-   const timestamp=Number(p.createdAtBlockTimestamp);
-   const created=new Date(timestamp*1000).toLocaleString("fa-IR");
+   const timestamp=getTime(p);
+   const created=timestamp
+    ?new Date(timestamp*1000).toLocaleString("fa-IR")
+    :"نامشخص";
 
    const card=document.createElement("div");
    card.className="pool";
