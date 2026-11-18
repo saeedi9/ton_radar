@@ -8,7 +8,7 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 *{box-sizing:border-box}
-body{margin:0;background:#0b1422;color:#fff;font-family:Arial,sans-serif;padding:16px}
+body{margin:0;background:#0b1422;color:white;font-family:Arial,sans-serif;padding:16px}
 header{text-align:center;padding:15px}
 h1{color:#55c7ff;margin:5px}
 .sub{color:#91a4bb;font-size:13px}
@@ -31,7 +31,6 @@ button{background:#263c56;color:white}
 </style>
 </head>
 <body>
-
 <header>
 <h1>TON RADAR 🚀</h1>
 <div class="sub">رادار استخرهای جدید شبکه TON</div>
@@ -42,7 +41,7 @@ button{background:#263c56;color:white}
 <div class="stat">تعداد استخرها<b id="count">۰</b></div>
 </div>
 
-<h2>🆕 ۲۰ استخر جدیدتر</h2>
+<h2>🔎 استخرهای TON</h2>
 <div id="status">در حال دریافت اطلاعات...</div>
 <div id="pools"></div>
 
@@ -70,65 +69,68 @@ async function load(){
  const box=document.getElementById("pools");
  const status=document.getElementById("status");
 
- status.textContent="در حال دریافت استخرهای جدید...";
+ status.textContent="در حال دریافت اطلاعات...";
 
  try{
-  const [poolResponse,assetResponse]=await Promise.all([
-
-   fetch(API+"/pools/query",{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({
-     condition:null,
-     sort_by:["createdAtBlockTimestamp:desc"],
-     limit:20
-    })
-   }),
-
+  const [pr,ar]=await Promise.all([
+   fetch(API+"/pools"),
    fetch(API+"/assets")
   ]);
 
-  if(!poolResponse.ok){
-   throw Error("Pool API: "+poolResponse.status);
-  }
+  if(!pr.ok)throw Error("Pools API: "+pr.status);
+  if(!ar.ok)throw Error("Assets API: "+ar.status);
 
-  if(!assetResponse.ok){
-   throw Error("Asset API: "+assetResponse.status);
-  }
+  const pd=await pr.json();
+  const ad=await ar.json();
 
-  const poolData=await poolResponse.json();
-  const assetData=await assetResponse.json();
+  const pools=pd.pool_list||[];
+  const assets=ad.asset_list||[];
 
-  const pools=poolData.pool_list||[];
-  const assets=assetData.asset_list||[];
-
-  const assetMap={};
+  const map={};
 
   assets.forEach(a=>{
    const key=(a.contract_address||a.address||"").toLowerCase();
-   if(key)assetMap[key]=a;
+   if(key)map[key]=a;
   });
 
-  document.getElementById("count").textContent=pools.length;
+  function getTime(p){
+   const v=p.createdAtBlockTimestamp;
+   if(v===null||v===undefined)return 0;
+   const n=Number(v);
+   return Number.isFinite(n)?n:0;
+  }
+
+  const hasTime=pools.some(p=>getTime(p)>0);
+
+  const sorted=[...pools];
+
+  if(hasTime){
+   sorted.sort((a,b)=>getTime(b)-getTime(a));
+  }
+
+  const latest=sorted.slice(0,20);
+
+  document.getElementById("count").textContent=latest.length;
   box.innerHTML="";
 
-  if(!pools.length){
-   status.textContent="استخر جدیدی دریافت نشد.";
+  if(!latest.length){
+   status.textContent="استخر پیدا نشد.";
    return;
   }
 
-  status.textContent="استخرها از API دریافت شدند.";
+  status.textContent=hasTime
+   ?"استخرها بر اساس زمان ایجاد مرتب شدند"
+   :"زمان ایجاد در پاسخ API موجود نیست؛ ترتیب API نمایش داده می‌شود";
 
-  pools.forEach((p,i)=>{
-
-   const a0=assetMap[(p.token0_address||"").toLowerCase()];
-   const a1=assetMap[(p.token1_address||"").toLowerCase()];
+  latest.forEach((p,i)=>{
+   const a0=map[(p.token0_address||"").toLowerCase()];
+   const a1=map[(p.token1_address||"").toLowerCase()];
 
    const name0=a0?.symbol||a0?.display_name||"توکن ناشناس";
    const name1=a1?.symbol||a1?.display_name||"توکن ناشناس";
 
    const address=p.address||"";
-   const timestamp=Number(p.createdAtBlockTimestamp);
+   const timestamp=getTime(p);
    const created=timestamp
     ?new Date(timestamp*1000).toLocaleString("fa-IR")
     :"نامشخص";
@@ -145,8 +147,7 @@ async function load(){
     </div>
     <div class="actions">
     <a target="_blank" rel="noopener"
-    href="https://dexscreener.com/ton/${encodeURIComponent(address)}">
-    نمودار و قیمت</a>
+    href="https://dexscreener.com/ton/${encodeURIComponent(address)}">نمودار و قیمت</a>
     <button type="button">آدرس توکن‌ها</button>
     </div>`;
 
@@ -160,8 +161,7 @@ async function load(){
    if((i+1)%5===0){
     const ad=document.createElement("div");
     ad.className="ad";
-    ad.innerHTML=
-    "<b>📢 جایگاه تبلیغاتی</b><p>فضای معرفی پروژه‌های TON</p>";
+    ad.innerHTML="<b>📢 جایگاه تبلیغاتی</b><p>فضای معرفی پروژه‌های TON</p>";
     box.appendChild(ad);
    }
   });
