@@ -3,172 +3,119 @@
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TON RADAR</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 *{box-sizing:border-box}
-body{margin:0;background:#0b1422;color:white;font-family:Arial,sans-serif;padding:16px}
-header{text-align:center;padding:15px}
-h1{color:#55c7ff;margin:5px}
-.sub{color:#91a4bb;font-size:13px}
-.stats{display:flex;gap:10px;margin:15px 0}
-.stat,.pool,.ad{background:#17263a;border:1px solid #263d58;border-radius:14px;padding:14px}
-.stat{flex:1;text-align:center}
-.stat b{display:block;font-size:20px;color:#55c7ff;margin-top:7px}
-h2{font-size:17px}
-.pool{margin:12px 0}
-.pool h3{margin:0 0 10px;color:#65ceff}
-.info{font-size:13px;color:#b5c5d8;line-height:2;overflow-wrap:anywhere}
-.actions{display:flex;gap:8px;margin-top:10px}
-a,button{border:0;border-radius:9px;padding:10px;text-decoration:none;font-size:13px}
-a{background:#167bb9;color:white}
-button{background:#263c56;color:white}
-.ad{margin:16px 0;border:1px dashed #e7ae45;text-align:center}
-.ad b{color:#ffc65b}
-.ad p{font-size:13px;color:#c4d0df}
-#status{text-align:center;color:#9eb2c8;padding:20px}
+body{margin:0;background:#071426;color:#fff;font-family:Arial,sans-serif;padding:18px}
+header{text-align:center;padding:20px 0}
+h1{color:#39c5ff;margin:5px}
+.sub{color:#91a9c5;font-size:13px}
+#status{text-align:center;color:#9bb5ce;margin:15px}
+.card{background:#10243c;border:1px solid #23415f;border-radius:13px;padding:14px;margin:12px 0}
+.name{font-size:17px;font-weight:bold;color:#5bd0ff}
+.info{font-size:13px;color:#c4d3e4;margin-top:9px;line-height:2}
+.address{font-size:10px;direction:ltr;word-break:break-all;color:#829bb7}
+a{color:#48caff}
+.ad{background:#172d45;border:1px dashed #64809b;border-radius:12px;text-align:center;padding:17px;margin:15px 0;color:#ffcf69}
+button{background:#168bd0;color:white;border:0;border-radius:9px;padding:11px 20px;font-size:15px}
 </style>
 </head>
 <body>
 <header>
-<h1>TON RADAR 🚀</h1>
+<h1>🚀 TON RADAR</h1>
 <div class="sub">رادار استخرهای جدید شبکه TON</div>
 </header>
 
-<div class="stats">
-<div class="stat">شبکه<b>TON</b></div>
-<div class="stat">تعداد استخرها<b id="count">۰</b></div>
+<div style="text-align:center">
+<button onclick="load()">🔄 بروزرسانی</button>
 </div>
-
-<h2>🔎 استخرهای TON</h2>
 <div id="status">در حال دریافت اطلاعات...</div>
-<div id="pools"></div>
+<div id="list"></div>
 
 <script>
-const tg=window.Telegram?.WebApp;
-if(tg){tg.ready();tg.expand();}
-
 const API="https://api.ston.fi/v1";
 
-function money(v){
- const n=Number(v);
- return Number.isFinite(n)
- ?n.toLocaleString("en-US",{maximumFractionDigits:2})
- :"نامشخص";
-}
-
-function safe(v){
- return String(v??"").replace(/[&<>"']/g,c=>({
- "&":"&amp;","<":"&lt;",">":"&gt;",
- '"':"&quot;","'":"&#39;"
+function safe(s){
+ return String(s??"").replace(/[&<>"']/g,c=>({
+ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
  }[c]));
 }
 
 async function load(){
- const box=document.getElementById("pools");
+ const list=document.getElementById("list");
  const status=document.getElementById("status");
-
- status.textContent="در حال دریافت اطلاعات...";
+ status.textContent="در حال دریافت ۲۰ استخر جدید...";
+ list.innerHTML="";
 
  try{
-  const [pr,ar]=await Promise.all([
-   fetch(API+"/pools"),
+  const params=new URLSearchParams({
+   sort_by:"createdAtBlockTimestamp:desc",
+   limit:"20"
+  });
+
+  const [poolRes,assetRes]=await Promise.all([
+   fetch(API+"/pools/query?"+params.toString(),{
+    method:"POST"
+   }),
    fetch(API+"/assets")
   ]);
 
-  if(!pr.ok)throw Error("Pools API: "+pr.status);
-  if(!ar.ok)throw Error("Assets API: "+ar.status);
+  if(!poolRes.ok) throw Error("خطای استخرها: "+poolRes.status);
+  if(!assetRes.ok) throw Error("خطای توکن‌ها: "+assetRes.status);
 
-  const pd=await pr.json();
-  const ad=await ar.json();
+  const pd=await poolRes.json();
+  const ad=await assetRes.json();
 
   const pools=pd.pool_list||[];
   const assets=ad.asset_list||[];
 
-  const map={};
+  if(!pools.length) throw Error("هیچ استخری از API دریافت نشد");
 
+  const assetMap={};
   assets.forEach(a=>{
-   const key=(a.contract_address||a.address||"").toLowerCase();
-   if(key)map[key]=a;
+   const addr=a.contract_address||a.address;
+   if(addr) assetMap[addr]=a.symbol||a.display_name||"توکن ناشناس";
   });
 
-  function getTime(p){
-   const v=p.createdAtBlockTimestamp;
-   if(v===null||v===undefined)return 0;
-   const n=Number(v);
-   return Number.isFinite(n)?n:0;
-  }
+  pools.sort((a,b)=>
+   Number(b.createdAtBlockTimestamp||0)-
+   Number(a.createdAtBlockTimestamp||0)
+  );
 
-  const hasTime=pools.some(p=>getTime(p)>0);
+  status.textContent="۲۰ استخر بر اساس زمان ایجاد، از جدید به قدیم";
 
-  const sorted=[...pools];
-
-  if(hasTime){
-   sorted.sort((a,b)=>getTime(b)-getTime(a));
-  }
-
-  const latest=sorted.slice(0,20);
-
-  document.getElementById("count").textContent=latest.length;
-  box.innerHTML="";
-
-  if(!latest.length){
-   status.textContent="استخر پیدا نشد.";
-   return;
-  }
-
-  status.textContent=hasTime
-   ?"استخرها بر اساس زمان ایجاد مرتب شدند"
-   :"زمان ایجاد در پاسخ API موجود نیست؛ ترتیب API نمایش داده می‌شود";
-
-  latest.forEach((p,i)=>{
-   const a0=map[(p.token0_address||"").toLowerCase()];
-   const a1=map[(p.token1_address||"").toLowerCase()];
-
-   const name0=a0?.symbol||a0?.display_name||"توکن ناشناس";
-   const name1=a1?.symbol||a1?.display_name||"توکن ناشناس";
-
-   const address=p.address||"";
-   const timestamp=getTime(p);
-   const created=timestamp
-    ?new Date(timestamp*1000).toLocaleString("fa-IR")
+  pools.slice(0,20).forEach((p,i)=>{
+   const a0=assetMap[p.token0_address]||"توکن ناشناس";
+   const a1=assetMap[p.token1_address]||"توکن ناشناس";
+   const address=p.address||p.id||"";
+   const time=p.createdAtBlockTimestamp
+    ?new Date(Number(p.createdAtBlockTimestamp)*1000).toLocaleString("fa-IR")
     :"نامشخص";
 
    const card=document.createElement("div");
-   card.className="pool";
-
+   card.className="card";
    card.innerHTML=`
-    <h3>${safe(name0)} / ${safe(name1)}</h3>
+    <div class="name">${i+1}. ${safe(a0)} / ${safe(a1)}</div>
     <div class="info">
-    🕒 زمان ایجاد: ${safe(created)}<br>
-    💧 نقدینگی: $${money(p.lp_total_supply_usd)}<br>
-    📍 آدرس استخر: ${safe(address||"نامشخص")}<br>
+     💧 نقدینگی: $${Number(p.lp_total_supply_usd||0).toLocaleString("en-US")}<br>
+     🕒 زمان ایجاد: ${safe(time)}<br>
+     <a href="https://dexscreener.com/ton/${encodeURIComponent(address)}" target="_blank">مشاهده در DexScreener</a>
     </div>
-    <div class="actions">
-    <a target="_blank" rel="noopener"
-    href="https://dexscreener.com/ton/${encodeURIComponent(address)}">نمودار و قیمت</a>
-    <button type="button">آدرس توکن‌ها</button>
-    </div>`;
+    <div class="address">${safe(address)}</div>
+   `;
+   list.appendChild(card);
 
-   card.querySelector("button").onclick=()=>{
-    alert("Token 0: "+(p.token0_address||"نامشخص")+
-    "\nToken 1: "+(p.token1_address||"نامشخص"));
-   };
-
-   box.appendChild(card);
-
-   if((i+1)%5===0){
-    const ad=document.createElement("div");
-    ad.className="ad";
-    ad.innerHTML="<b>📢 جایگاه تبلیغاتی</b><p>فضای معرفی پروژه‌های TON</p>";
-    box.appendChild(ad);
+   if((i+1)%5===0 && i!==19){
+    const adBox=document.createElement("div");
+    adBox.className="ad";
+    adBox.innerHTML="📢 جایگاه تبلیغات TON RADAR";
+    list.appendChild(adBox);
    }
   });
 
  }catch(e){
-  console.error(e);
-  status.textContent="خطا در دریافت اطلاعات: "+e.message;
+  status.textContent="خطا: "+e.message;
  }
 }
 
